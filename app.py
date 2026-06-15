@@ -1,28 +1,26 @@
 import streamlit as st
 import cv2
 import numpy as np
-from streamlit_image_coordinates import streamlit_image_coordinates
 
 st.set_page_config(page_title="HFG Precision Wear Engine", page_icon="🦷", layout="centered")
 
 st.title("🦷 HFG Precision Wear Engine")
-st.write("Click directly on the image below to set your calculation points.")
+st.write("Use the sliders below to manually align the measurement markers to your insert.")
 
+# Factory baseline constant for #100 Thin
 factory_nominal_length_mm = 12.5
 
 sku_selection = st.selectbox("Selected Geometry Profile", ["#100 Thin", "#10 Universal", "#1000 Triple Bend"])
 uploaded_file = st.file_uploader("Upload Insert Photo", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # Read Image files
+    # Read and decode the image
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img_bgr = cv2.imdecode(file_bytes, 1)
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     
-    # --- FIXED: Auto-rotate if the picture is sideways, then scale down safely ---
+    # Scale image down cleanly so it fits perfectly on your screen
     h_orig, w_orig, _ = img_rgb.shape
-    
-    # If it's a massive smartphone photo, resize the longest edge to 600px max
     max_dimension = 600
     if h_orig > w_orig:
         scale_factor = max_dimension / h_orig
@@ -36,30 +34,26 @@ if uploaded_file is not None:
     img_resized = cv2.resize(img_rgb, (target_width, target_height), interpolation=cv2.INTER_AREA)
     h, w, _ = img_resized.shape
 
-    st.subheader("2. Interactive Frame Calibration")
-    mode = st.radio("Select point to define by clicking the image:", 
-                    ["1. Set Grip-to-Metal Junction (Baseline)", "2. Set Absolute Tip Apex"])
+    # --- NO CLICKING REQUIRED: Use precision manual sliders ---
+    st.subheader("2. Alignment Controls")
+    st.markdown("Move these sliders until the visual lines on the photo match your insert perfectly.")
     
-    # Initialize trackers safely based on the corrected screen height
-    if "baseline_y" not in st.session_state or st.session_state.baseline_y > h: 
-        st.session_state.baseline_y = int(h * 0.7)
-    if "apex_y" not in st.session_state or st.session_state.apex_y > h: 
-        st.session_state.apex_y = int(h * 0.3)
-    if "scale_pixels_per_mm" not in st.session_state: 
-        st.session_state.scale_pixels_per_mm = 15.0
+    # Sliders match the exact pixel height of your photo dynamically
+    apex_y = st.slider("Move Green Line to the very TIP APEX", min_value=0, max_value=h, value=int(h * 0.3))
+    baseline_y = st.slider("Move Blue Line to the GRIP JUNCTION (Base)", min_value=0, max_value=h, value=int(h * 0.7))
+    
+    # Adjustment for camera zoom factor
+    scale_pixels_per_mm = st.number_input(
+        "Camera Zoom Scale (Pixels per Millimeter)", 
+        min_value=1.0, max_value=100.0, value=15.0, step=0.1
+    )
 
-    # Draw visual overlays dynamically onto the resized viewport canvas
+    # Draw the lines onto your image in real-time
     preview_img = img_resized.copy()
-    cv2.line(preview_img, (0, st.session_state.baseline_y), (w, st.session_state.baseline_y), (255, 0, 0), 3) # Blue Baseline
-    cv2.circle(preview_img, (int(w/2), st.session_state.apex_y), 8, (0, 255, 0), -1) # Green Tip Tracker
-
-    st.caption("👇 Tap/Click the image below to place your points.")
+    # Green line for the fine tip apex
+    cv2.line(preview_img, (0, apex_y), (w, apex_y), (0, 255, 0), 2)
+    cv2.circle(preview_img, (int(w/2), apex_y), 6, (0, 255, 0), -1)
     
-    # Capture coordinates safely
-    value = streamlit_image_coordinates(preview_img, key="coords")
-
-    if value is not None:
-        clicked_y = value["y"]
-        if clicked_y < h: # Ensure click is inside the frame boundary
-            if "1. Set" in mode:
-                st.session_state.baseline_y = clicked
+    # Blue line for the base junction where metal meets handle
+    cv2.line(preview_img, (0, baseline_y), (w, baseline_y), (0, 0, 255), 2)
+    cv2.circle(preview_img, (int(w
